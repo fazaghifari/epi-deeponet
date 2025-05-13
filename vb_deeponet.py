@@ -157,6 +157,5 @@ if __name__ == "__main__":
     model,_ = train(u_in, s_in, x_t_in, batch_size=2048, network_params=params, epochs=3000)
 
     model.save_weights("output/VBDeepOnet_1D.h5")
-    model.save("output/VBDeepOnet_1D")
 
     predict(u_test, s_test, sensor_data, model, plot=True)
