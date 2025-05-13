@@ -28,6 +28,16 @@ def scheduler(epoch):
     
     return lr
 
+def construct_model(network_params, batch_size=2048):
+    trunk_params = network_params["trunk"]
+    branch_params = network_params["branch"]
+    
+    print("#####  Initializing Model  #####")
+    model = don.deeponet(y_in_size=(x_t_in.shape[1]), u_in_size=(u_in.shape[1]), 
+                         trunk_params=trunk_params, branch_params=branch_params, batch_size=batch_size, out_feat=1)
+
+    return model
+
 def data_preprocess(data_input, data_target, sensor_loc, 
                     n_total=2000, n_test=500, eval_points=50):
     random_num = 77
@@ -51,32 +61,6 @@ def data_preprocess(data_input, data_target, sensor_loc,
     s_test = dp.normalizer(g_test, g_train)
 
     return (u_in, x_t_in, s_in, u_test, s_test)
-
-def train(u_in, s_in, x_t_in, batch_size, network_params, epochs=2000):
-
-    trunk_params = network_params["trunk"]
-    branch_params = network_params["branch"]
-    
-    print("#####  Initializing Model  #####")
-    model = don.deeponet(y_in_size=(x_t_in.shape[1]), u_in_size=(u_in.shape[1]), 
-                         trunk_params=trunk_params, branch_params=branch_params, batch_size=batch_size, out_feat=1)
-    model.summary()
-    
-    # ELBO loss function
-    negloglikelihood = lambda y_true, y_pred: (keras.backend.sum(-y_pred.log_prob(y_true)) + 
-                                               (sum(model.losses) / batch_size))
-    
-    callback = keras.callbacks.LearningRateScheduler(scheduler)
-
-    model.compile(
-        optimizer=keras.optimizers.legacy.Adam(learning_rate=1e-4),
-        loss=negloglikelihood,
-        metrics=["mse"])
-    
-    history = model.fit( x=[x_t_in, u_in], y=s_in, batch_size=batch_size, 
-                        epochs=epochs, callbacks=[callback], verbose=1)
-    
-    return model, history
 
 def mc_preds(y_test, u, model):
     pred_dist = model([y_test,u])
@@ -128,10 +112,16 @@ def plotting(preds_mean, preds_std, s_test, y_test, list_num=[0,7,42,77]):
     plt.margins(0)
     plt.show()
 
+def negloglikelihood(y_true, y_pred):
+    loss =  (keras.backend.sum(-y_pred.log_prob(y_true)) + 
+                (sum(model.losses) / 2048))
+    
+    return loss
 
 if __name__ == "__main__":
-    
+
     n_grid = 100
+    batch_size = 2048
 
     u_in = np.load("data/poisson1Dinput.npy")
     g_uy_out = np.load("data/poisson1Doutput.npy") * 20
@@ -154,9 +144,17 @@ if __name__ == "__main__":
     params["trunk"] = trunk_params
     params["branch"] = branch_params
 
-    model,_ = train(u_in, s_in, x_t_in, batch_size=2048, network_params=params, epochs=3000)
-
-    model.save_weights("output/VBDeepOnet_1D.h5")
-    model.save("output/VBDeepOnet_1D")
+    model=construct_model(network_params=params, batch_size=batch_size)
+    
+    model.load_weights('output/VBDeepOnet_1D.h5')
+    negloglikelihood = lambda y_true, y_pred: (keras.backend.sum(-y_pred.log_prob(y_true)) + 
+                                               (sum(model.losses) / batch_size))
+    
+    model.compile(
+        optimizer=keras.optimizers.legacy.Adam(learning_rate=1e-4),
+        loss=negloglikelihood,
+        metrics=["mse"])
+    
+    model.summary()
 
     predict(u_test, s_test, sensor_data, model, plot=True)
